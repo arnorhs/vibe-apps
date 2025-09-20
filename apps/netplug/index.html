@@ -228,6 +228,47 @@
           />
         </svg>
       </button>
+      <div class="w-px h-8 bg-gray-600"></div>
+      <button
+        id="undo-btn"
+        title="Undo (Ctrl+Z)"
+        class="bg-gray-700 hover:bg-gray-600 text-gray-300 p-2 rounded-lg transition-colors"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="h-6 w-6"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M12 19l-7-7 7-7m5 14l7-7-7-7"
+          />
+        </svg>
+      </button>
+      <button
+        id="redo-btn"
+        title="Redo (Ctrl+Y)"
+        class="bg-gray-700 hover:bg-gray-600 text-gray-300 p-2 rounded-lg transition-colors"
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          class="h-6 w-6"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M12 5l7 7-7 7m-5-14l-7 7 7 7"
+          />
+        </svg>
+      </button>
     </div>
 
     <!-- Custom Device Modal -->
@@ -304,6 +345,8 @@
         const toolBtns = document.querySelectorAll('.tool-btn')
         const contextMenu = document.getElementById('context-menu')
         const deleteDeviceOption = document.getElementById('delete-device-option')
+        const undoBtn = document.getElementById('undo-btn')
+        const redoBtn = document.getElementById('redo-btn')
 
         // --- DATA ---
         let deviceDatabase = [
@@ -340,7 +383,13 @@
         let textIdCounter = 0
         let contextMenuDeviceId = null // To store the ID of the device right-clicked
 
+        // Undo/Redo Stacks
+        let undoStack = []
+        let redoStack = []
+
         // --- UTILITY FUNCTIONS ---
+        const deepCopy = (obj) => JSON.parse(JSON.stringify(obj))
+
         const getElementCenter = (el) => {
           const rect = el.getBoundingClientRect()
           return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
@@ -354,6 +403,148 @@
         }
 
         // --- CORE LOGIC ---
+
+        // Undo/Redo Logic
+        const saveState = () => {
+          const state = {
+            devicesOnCanvas: devicesOnCanvas.map(d => ({
+              id: d.id,
+              name: d.element.querySelector('.font-bold').textContent,
+              ports: Array.from(d.element.querySelectorAll('.port')).map(p => ({
+                deviceId: p.dataset.deviceId,
+                portId: p.dataset.portId,
+                type: p.title.split(' ')[0],
+                class: p.classList.contains('sfp') ? 'sfp' : '',
+              })),
+              left: d.element.style.left,
+              top: d.element.style.top,
+            })),
+            connections: connections.map(c => ({
+              start: deepCopy(c.start),
+              end: deepCopy(c.end),
+            })),
+            panX: panX,
+            panY: panY,
+            // We will reconstruct worldHTML and svgWorldHTML in applyState
+          }
+          undoStack.push(deepCopy(state))
+          redoStack = [] // Clear redo stack on new action
+          console.log('State saved', undoStack.length)
+        }
+
+        const applyState = (state) => {
+          world.innerHTML = ''
+          svgWorld.innerHTML = ''
+          devicesOnCanvas = []
+          connections = []
+
+          state.devicesOnCanvas.forEach(dInfo => {
+            const deviceElement = document.createElement('div')
+            deviceElement.id = dInfo.id
+            deviceElement.className =
+              'device bg-gray-700 rounded-lg shadow-lg border border-gray-600 p-3'
+            deviceElement.style.left = dInfo.left
+            deviceElement.style.top = dInfo.top
+
+            let portsHTML = dInfo.ports
+              .map((p) => {
+                return `<div class="port w-5 h-5 bg-gray-900 border-2 border-gray-500 rounded-sm ${p.class || ''}" data-device-id="${p.deviceId}" data-port-id="${p.portId}" title="${p.type} Port ${p.portId}"></div>`
+              })
+              .join('')
+
+            deviceElement.innerHTML = `
+                      <div class="font-bold text-center mb-3 text-blue-300 pointer-events-none">${dInfo.name}</div>
+                      <div class="flex flex-wrap justify-center gap-2">${portsHTML}</div>
+                  `
+
+            world.appendChild(deviceElement)
+            devicesOnCanvas.push({ id: dInfo.id, element: deviceElement, connections: [] })
+            makeDraggable(deviceElement)
+
+            deviceElement.querySelectorAll('.port').forEach((port) => {
+              port.addEventListener('mousedown', onPortMouseDown)
+              port.addEventListener('mouseup', onPortMouseUp)
+            })
+
+            deviceElement.addEventListener('contextmenu', (e) => {
+              e.preventDefault()
+              contextMenuDeviceId = dInfo.id
+              contextMenu.style.display = 'block'
+              contextMenu.style.left = `${e.clientX}px`
+              contextMenu.style.top = `${e.clientY}px`
+            })
+          })
+
+          state.connections.forEach(c => {
+            const startEl = document.querySelector(
+              `[data-device-id="${c.start.deviceId}"][data-port-id="${c.start.portId}"]`,
+            )
+            const endEl = document.querySelector(
+              `[data-device-id="${c.end.deviceId}"][data-port-id="${c.end.portId}"]`,
+            )
+
+            if (startEl && endEl) {
+              const startPos = getElementCenter(startEl)
+              const endPos = getElementCenter(endEl)
+              const cablePath = createCablePath(
+                startPos.x - panX,
+                startPos.y - panY,
+                endPos.x - panX,
+                endPos.y - panY,
+              )
+              const cable = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+              cable.setAttribute('class', 'cable')
+              cable.setAttribute('d', cablePath)
+              cable.setAttribute('data-start-device', c.start.deviceId)
+              cable.setAttribute('data-start-port', c.start.portId)
+              cable.setAttribute('data-end-device', c.end.deviceId)
+              cable.setAttribute('data-end-port', c.end.portId)
+              svgWorld.appendChild(cable)
+              connections.push({ start: c.start, end: c.end, cable: cable })
+            }
+          })
+
+          panX = state.panX
+          panY = state.panY
+          world.style.transform = `translate(${panX}px, ${panY}px)`
+          svgWorld.setAttribute('transform', `translate(${panX} ${panY})`)
+
+          // Update counters to prevent ID collisions
+          let maxDeviceId = 0
+          let maxTextId = 0
+          devicesOnCanvas.forEach(d => {
+            const idNum = parseInt(d.id.replace('device-', ''))
+            if (!isNaN(idNum) && idNum > maxDeviceId) maxDeviceId = idNum
+          })
+          world.querySelectorAll('.text-label').forEach(textEl => {
+            const idNum = parseInt(textEl.id.replace('text-', ''))
+            if (!isNaN(idNum) && idNum > maxTextId) maxTextId = idNum
+          })
+          deviceIdCounter = maxDeviceId
+          textIdCounter = maxTextId
+        }
+
+        const undo = () => {
+          if (undoStack.length > 1) { // Keep at least the initial state
+            const lastState = undoStack.pop()
+            redoStack.push(deepCopy(lastState))
+            applyState(undoStack[undoStack.length - 1])
+            console.log('Undo performed', undoStack.length, redoStack.length)
+          } else {
+            console.log('Nothing to undo')
+          }
+        }
+
+        const redo = () => {
+          if (redoStack.length > 0) {
+            const nextState = redoStack.pop()
+            undoStack.push(deepCopy(nextState))
+            applyState(nextState)
+            console.log('Redo performed', undoStack.length, redoStack.length)
+          } else {
+            console.log('Nothing to redo')
+          }
+        }
 
         function setActiveTool(tool) {
           // Deselect other tools
@@ -377,6 +568,7 @@
 
         // Device Management
         const deleteDevice = (deviceId) => {
+          saveState() // Save state before deletion
           // Remove device element from DOM
           const deviceElement = document.getElementById(deviceId)
           if (deviceElement) {
@@ -397,6 +589,7 @@
         }
 
         const addDeviceToCanvas = (deviceInfo) => {
+          saveState() // Save state before adding a device
           deviceIdCounter++
           const deviceElement = document.createElement('div')
           const deviceId = `device-${deviceIdCounter}`
@@ -473,6 +666,8 @@
           const closeDragElement = () => {
             document.onmouseup = null
             document.onmousemove = null
+            // Save state after dragging stops
+            saveState()
           }
           element.onmousedown = dragMouseDown
         }
@@ -565,6 +760,7 @@
 
         // Reset
         resetButton.addEventListener('click', () => {
+          saveState() // Save state before resetting
           world.innerHTML = ''
           svgWorld.innerHTML = ''
           devicesOnCanvas = []
@@ -578,10 +774,36 @@
 
         // Cable Drawing Events
         function onPortMouseDown(e) {
-          /* ... same as before ... */
+          e.stopPropagation()
+          isDrawingCable = true
+          startPort = e.target
+          const startPos = getElementCenter(startPort)
+          currentDrawingCable = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+          currentDrawingCable.setAttribute('class', 'cable active-draw')
+          currentDrawingCable.setAttribute(
+            'd',
+            `M ${startPos.x - panX} ${startPos.y - panY} L ${startPos.x - panX} ${startPos.y - panY}`,
+          )
+          svgWorld.appendChild(currentDrawingCable)
         }
+
         function onPortMouseUp(e) {
-          /* ... same as before ... */
+          if (isDrawingCable && startPort && startPort !== e.target) {
+            saveState() // Save state before adding a connection
+            const endPort = e.target
+            const newConnection = {
+              start: { deviceId: startPort.dataset.deviceId, portId: startPort.dataset.portId },
+              end: { deviceId: endPort.dataset.deviceId, portId: endPort.dataset.portId },
+              cable: currentDrawingCable,
+            }
+            connections.push(newConnection)
+            currentDrawingCable.classList.remove('active-draw')
+            updateCablesForDevice(newConnection.start.deviceId)
+          }
+          // Reset drawing state regardless
+          isDrawingCable = false
+          startPort = null
+          currentDrawingCable = null
         }
 
         // Main Canvas Mouse Events (Panning, Drawing, Text)
@@ -593,6 +815,7 @@
             lastMouseX = e.clientX
             lastMouseY = e.clientY
           } else if (activeTool === 'line') {
+            saveState() // Save state before drawing a line
             isDrawingLine = true
             const startX = e.clientX - panX
             const startY = e.clientY - panY
@@ -604,6 +827,7 @@
             currentLine.setAttribute('y2', startY)
             svgWorld.appendChild(currentLine)
           } else if (activeTool === 'text') {
+            saveState() // Save state before adding text
             textIdCounter++
             const textEl = document.createElement('div')
             textEl.id = `text-${textIdCounter}`
@@ -683,6 +907,7 @@
 
         function onPortMouseUp(e) {
           if (isDrawingCable && startPort && startPort !== e.target) {
+            saveState() // Save state before adding a connection
             const endPort = e.target
             const newConnection = {
               start: { deviceId: startPort.dataset.deviceId, portId: startPort.dataset.portId },
@@ -718,6 +943,26 @@
         canvas.addEventListener('scroll', () => {
           contextMenu.style.display = 'none'
         })
+
+        // Undo/Redo button event listeners
+        undoBtn.addEventListener('click', undo)
+        redoBtn.addEventListener('click', redo)
+
+        // Keyboard shortcuts for Undo/Redo
+        document.addEventListener('keydown', (e) => {
+          if (e.ctrlKey || e.metaKey) { // Ctrl for Windows/Linux, Meta for Mac
+            if (e.key === 'z') {
+              e.preventDefault()
+              undo()
+            } else if (e.key === 'y' || (e.shiftKey && e.key === 'Z')) {
+              e.preventDefault()
+              redo()
+            }
+          }
+        })
+
+        // Initial state save
+        saveState()
       })
     </script>
 
