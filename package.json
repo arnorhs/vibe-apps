@@ -1,0 +1,20 @@
+{
+  "name": "vibe-apps",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "http-server apps --port 3009",
+    "build": "vite build",
+    "preview": "vite preview",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "prettier": "^3.6.2",
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "http-server": "^14.1.1"
+  }
+}

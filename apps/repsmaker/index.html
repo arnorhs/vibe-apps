@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reps Maker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            color: #333;
+            margin: 0;
+            padding: 20px;
+        }
+        header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+        main {
+            max-width: 800px;
+            margin: auto;
+            background: #fff;
+            padding: 20px 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        .create-set, .saved-sets {
+            margin-bottom: 40px;
+        }
+        form label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        form input[type="text"], form input[type="url"] {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .exercise-input-group {
+            border-left: 3px solid #007bff;
+            padding-left: 10px;
+            margin-bottom: 15px;
+        }
+        #add-exercise-btn, button[type="submit"], #save-workout-btn, .action-btn, .record-btn {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+        #sets-list {
+            list-style: none;
+            padding: 0;
+        }
+        .set-item {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .set-item .actions {
+            display: flex;
+            gap: 10px;
+        }
+        .workout-grid-container {
+            display: none; /* Initially hide the workout view */
+        }
+        .workout-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr 1fr;
+            gap: 10px;
+            align-items: center;
+        }
+        .grid-header {
+            font-weight: bold;
+            border-bottom: 2px solid #ccc;
+            padding-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1 id="app-title">Reps Maker</h1>
+        <p id="app-tagline">Build your own training program</p>
+    </header>
+
+    <main>
+        <section class="main-view">
+            <section class="create-set">
+                <h2>Create an Exercise Set</h2>
+                <form id="exercise-set-form">
+                    <label for="set-name">Set Name:</label>
+                    <input type="text" id="set-name" required>
+
+                    <div id="exercises-container">
+                        <div class="exercise-input-group">
+                            <label>Exercise:</label>
+                            <input type="text" class="exercise-name" placeholder="e.g., Squats" required>
+                            <input type="url" class="exercise-url" placeholder="Optional URL">
+                        </div>
+                    </div>
+
+                    <button type="button" id="add-exercise-btn">+ Add Another Exercise</button>
+                    <button type="submit">Save Set</button>
+                </form>
+            </section>
+
+            <section class="saved-sets">
+                <h2>Your Saved Sets</h2>
+                <ul id="sets-list"></ul>
+            </section>
+        </section>
+
+        <section class="workout-grid-container">
+            <h2 id="workout-set-title"></h2>
+            <p><button onclick="showMainView()">← Back to Sets</button></p>
+            <div id="workout-grid"></div>
+            <button id="save-workout-btn">Save Workout</button>
+        </section>
+    </main>
+
+    <script>
+        const mainView = document.querySelector('.main-view');
+        const workoutView = document.querySelector('.workout-grid-container');
+        const workoutSetTitle = document.getElementById('workout-set-title');
+        const workoutGrid = document.getElementById('workout-grid');
+        const saveWorkoutBtn = document.getElementById('save-workout-btn');
+        const setsList = document.getElementById('sets-list');
+
+        let savedSets = JSON.parse(localStorage.getItem('exerciseSets')) || [];
+
+        // --- Functions for managing views and data ---
+
+        const showMainView = () => {
+            mainView.style.display = 'block';
+            workoutView.style.display = 'none';
+            renderSets();
+        };
+
+        const showWorkoutView = (set) => {
+            mainView.style.display = 'none';
+            workoutView.style.display = 'block';
+            renderWorkoutGrid(set);
+        };
+
+        const renderSets = () => {
+            setsList.innerHTML = '';
+            savedSets.forEach((set, index) => {
+                const listItem = document.createElement('li');
+                listItem.className = 'set-item';
+                listItem.innerHTML = `
+                    <span>${set.name}</span>
+                    <div class="actions">
+                        <button class="action-btn" onclick="editSet(${index})">Edit</button>
+                        <button class="action-btn record-btn" data-index="${index}">Record Workout</button>
+                    </div>
+                `;
+                setsList.appendChild(listItem);
+            });
+        };
+
+        const renderWorkoutGrid = (currentSet) => {
+            workoutSetTitle.textContent = currentSet.name;
+            workoutGrid.innerHTML = '';
+
+            const previousWorkoutData = JSON.parse(localStorage.getItem(`workoutData_${currentSet.name}`)) || {};
+
+            const headers = ['Exercise', 'Previous Workout', 'Current Workout'];
+            headers.forEach(headerText => {
+                const header = document.createElement('div');
+                header.className = 'grid-header';
+                header.textContent = headerText;
+                workoutGrid.appendChild(header);
+            });
+
+            currentSet.exercises.forEach(exercise => {
+                const exerciseNameDiv = document.createElement('div');
+                exerciseNameDiv.textContent = exercise.name;
+                if (exercise.url) {
+                    const link = document.createElement('a');
+                    link.href = exercise.url;
+                    link.textContent = ' (Link)';
+                    link.target = '_blank';
+                    exerciseNameDiv.appendChild(link);
+                }
+                workoutGrid.appendChild(exerciseNameDiv);
+
+                const previousData = previousWorkoutData[exercise.name] || 'N/A';
+                const previousWorkoutDiv = document.createElement('div');
+                previousWorkoutDiv.textContent = previousData;
+                workoutGrid.appendChild(previousWorkoutDiv);
+
+                const inputDiv = document.createElement('div');
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'current-workout-input';
+                input.placeholder = 'e.g., 3x10 @ 135lbs';
+                input.dataset.exerciseName = exercise.name;
+                inputDiv.appendChild(input);
+                workoutGrid.appendChild(inputDiv);
+            });
+
+            saveWorkoutBtn.onclick = () => {
+                const currentWorkoutData = {};
+                document.querySelectorAll('.current-workout-input').forEach(input => {
+                    const exerciseName = input.dataset.exerciseName;
+                    const value = input.value;
+                    if (value) {
+                        currentWorkoutData[exerciseName] = value;
+                    }
+                });
+                localStorage.setItem(`workoutData_${currentSet.name}`, JSON.stringify(currentWorkoutData));
+                alert('Workout saved!');
+            };
+        };
+
+        // --- Event Listeners and Initial Setup ---
+
+        document.getElementById('add-exercise-btn').addEventListener('click', () => {
+            const exercisesContainer = document.getElementById('exercises-container');
+            const exerciseInputGroup = document.createElement('div');
+            exerciseInputGroup.className = 'exercise-input-group';
+            exerciseInputGroup.innerHTML = `
+                <label>Exercise:</label>
+                <input type="text" class="exercise-name" placeholder="e.g., Bench Press" required>
+                <input type="url" class="exercise-url" placeholder="Optional URL">
+            `;
+            exercisesContainer.appendChild(exerciseInputGroup);
+        });
+
+        document.getElementById('exercise-set-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const setName = document.getElementById('set-name').value;
+            const exercises = [];
+            document.querySelectorAll('.exercise-input-group').forEach(group => {
+                const name = group.querySelector('.exercise-name').value;
+                const url = group.querySelector('.exercise-url').value;
+                if (name) {
+                    exercises.push({ name, url });
+                }
+            });
+
+            const newSet = { name: setName, exercises: exercises };
+            savedSets.push(newSet);
+            localStorage.setItem('exerciseSets', JSON.stringify(savedSets));
+            e.target.reset();
+            document.getElementById('exercises-container').innerHTML = `
+                <div class="exercise-input-group">
+                    <label>Exercise:</label>
+                    <input type="text" class="exercise-name" placeholder="e.g., Squats" required>
+                    <input type="url" class="exercise-url" placeholder="Optional URL">
+                </div>
+            `;
+            renderSets();
+        });
+
+        setsList.addEventListener('click', (e) => {
+            if (e.target.classList.contains('record-btn')) {
+                const index = e.target.dataset.index;
+                showWorkoutView(savedSets[index]);
+            }
+        });
+
+        // Initial rendering of the app
+        showMainView();
+    </script>
+</body>
+</html>
