@@ -91,6 +91,29 @@
         background-color: #3b82f6 !important;
         color: white !important;
       }
+      #context-menu {
+        position: absolute;
+        background-color: #2d3748; /* gray-800 */
+        border: 1px solid #4a5568; /* gray-600 */
+        border-radius: 0.5rem;
+        padding: 0.5rem 0;
+        z-index: 1000;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        display: none; /* Hidden by default */
+      }
+      #context-menu ul {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      #context-menu ul li {
+        padding: 0.5rem 1rem;
+        cursor: pointer;
+        color: #e2e8f0; /* gray-200 */
+      }
+      #context-menu ul li:hover {
+        background-color: #4a5568; /* gray-600 */
+      }
     </style>
   </head>
   <body class="bg-gray-800 text-white overflow-hidden antialiased">
@@ -279,6 +302,8 @@
         const lineToolBtn = document.getElementById('line-tool-btn')
         const textToolBtn = document.getElementById('text-tool-btn')
         const toolBtns = document.querySelectorAll('.tool-btn')
+        const contextMenu = document.getElementById('context-menu')
+        const deleteDeviceOption = document.getElementById('delete-device-option')
 
         // --- DATA ---
         let deviceDatabase = [
@@ -313,6 +338,7 @@
         let isDrawingLine = false
         let currentLine = null
         let textIdCounter = 0
+        let contextMenuDeviceId = null // To store the ID of the device right-clicked
 
         // --- UTILITY FUNCTIONS ---
         const getElementCenter = (el) => {
@@ -350,6 +376,26 @@
         }
 
         // Device Management
+        const deleteDevice = (deviceId) => {
+          // Remove device element from DOM
+          const deviceElement = document.getElementById(deviceId)
+          if (deviceElement) {
+            world.removeChild(deviceElement)
+          }
+
+          // Remove associated cables from SVG canvas and connections array
+          connections = connections.filter((conn) => {
+            if (conn.start.deviceId === deviceId || conn.end.deviceId === deviceId) {
+              conn.cable.remove()
+              return false
+            }
+            return true
+          })
+
+          // Remove device from devicesOnCanvas array
+          devicesOnCanvas = devicesOnCanvas.filter((device) => device.id !== deviceId)
+        }
+
         const addDeviceToCanvas = (deviceInfo) => {
           deviceIdCounter++
           const deviceElement = document.createElement('div')
@@ -384,6 +430,15 @@
           deviceElement.querySelectorAll('.port').forEach((port) => {
             port.addEventListener('mousedown', onPortMouseDown)
             port.addEventListener('mouseup', onPortMouseUp)
+          })
+
+          // Add context menu listener
+          deviceElement.addEventListener('contextmenu', (e) => {
+            e.preventDefault() // Prevent default browser context menu
+            contextMenuDeviceId = deviceId
+            contextMenu.style.display = 'block'
+            contextMenu.style.left = `${e.clientX}px`
+            contextMenu.style.top = `${e.clientY}px`
           })
         }
 
@@ -643,7 +698,34 @@
           startPort = null
           currentDrawingCable = null
         }
+
+        // Context menu event listeners
+        deleteDeviceOption.addEventListener('click', () => {
+          if (contextMenuDeviceId) {
+            deleteDevice(contextMenuDeviceId)
+            contextMenuDeviceId = null
+            contextMenu.style.display = 'none'
+          }
+        })
+
+        document.addEventListener('click', (e) => {
+          if (!contextMenu.contains(e.target)) {
+            contextMenu.style.display = 'none'
+          }
+        })
+
+        // Hide context menu on scroll to prevent misplacement
+        canvas.addEventListener('scroll', () => {
+          contextMenu.style.display = 'none'
+        })
       })
     </script>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="hidden">
+      <ul>
+        <li id="delete-device-option">Delete</li>
+      </ul>
+    </div>
   </body>
 </html>
